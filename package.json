@@ -7,6 +7,7 @@
   "files": ["index.mjs", "README.md"],
   "keywords": ["opencode", "opencode-plugin", "vllm-sr", "decision"],
   "license": "MIT",
+  "repository": "github:laxtiz/opencode-vllm-sr-auth",
   "magpie": {
     "icon": "https://decision.vllm-sr.ai/assets/favicon.svg",
     "maxConcurrency": 4
