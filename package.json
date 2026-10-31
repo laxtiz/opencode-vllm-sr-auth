@@ -1,0 +1,14 @@
+{
+  "name": "opencode-vllm-sr-auth",
+  "version": "0.1.0",
+  "description": "vLLM-SR Decision — System One decision models (choice/noul/score/box) for OpenCode and magpie",
+  "type": "module",
+  "main": "./index.mjs",
+  "files": ["index.mjs", "README.md"],
+  "keywords": ["opencode", "opencode-plugin", "vllm-sr", "decision"],
+  "license": "MIT",
+  "magpie": {
+    "icon": "https://decision.vllm-sr.ai/assets/favicon.svg",
+    "maxConcurrency": 4
+  }
+}
