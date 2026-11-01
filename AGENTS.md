@@ -23,6 +23,24 @@ Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to the [
   ```
 - Host errors and `console.log` from the plugin appear as `plugin: …` lines; the `page-chat` lines on every command are unrelated noise from another plugin.
 
+## Sign-in flow tests: mock the Decision API first
+
+Key creation is rate-limited per network address (429 `key_creation_limited`, `Retry-After: 3600`) and the challenge endpoint also has a per-minute cap. **Never run a sign-in flow test against the real `decision.vllm-sr.ai`** — it burns the user's quota for the hour. Always:
+
+1. Start the mock: `node test/mock.mjs` (127.0.0.1:3497; difficulty 8, so the PoW is instant).
+2. Copy the plugin to the sandbox and point it there:
+   ```sh
+   sb=$(mktemp -d /tmp/opencode/sr.XXXX); mkdir -p $sb/plug
+   cp index.mjs $sb/plug/
+   sed -i 's#const BASE = "https://decision.vllm-sr.ai"#const BASE = "http://127.0.0.1:3497"#' $sb/plug/index.mjs
+   node test/mock.mjs &
+   m() { env HOME=$sb XDG_CONFIG_HOME=$sb/.config XDG_CACHE_HOME=$sb/.cache MAGPIE_ADDR=127.0.0.1:3499 magpie "$@"; }
+   m plugin add $sb/plug </dev/null
+   ```
+3. Exercise the flows (`m plugin login vllm-sr …`, `m quota`, `m plugin --json`), then kill the mock and remove the sandbox.
+
+The mock validates the proof of work the same way the real API does (leading zero bits of SHA-256 ≥ difficulty), so a passing run means the logic is right, not just that a call happened. Real-API calls are only for one-shot verifications the user asks for.
+
 ## Sign-in and identity
 
 - Sign-in state lives in magpie's `plugin-auth.json`, keyed by provider id `vllm-sr` — not by the plugin path. Moving/renaming the folder is safe, but re-register it: `magpie plugin rm <old-path> && magpie plugin add <new-path>`.

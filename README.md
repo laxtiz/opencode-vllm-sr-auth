@@ -19,12 +19,15 @@ The list is refreshed from [`GET /v1/systemone/models`](https://decision.vllm-sr
 
 ## Sign in
 
-1. Get a key: one click at [decision.vllm-sr.ai](https://decision.vllm-sr.ai/#key), no account. Keys are shown once (`sk-vsr-…`).
-2. Add the plugin and sign in:
+Two ways to sign in, both without an account:
+
+- **Create a key automatically** — no prompts: the plugin solves the key challenge from the [docs](https://decision.vllm-sr.ai/docs#authentication) (a SHA-256 proof of work, a second or two) and stores the new key. Each network address may create a limited number of keys per hour; when the limit is hit the sign-in fails with `429 key_creation_limited` and its `Retry-After`.
+- **Decision API key** — paste an existing key (one click at [decision.vllm-sr.ai](https://decision.vllm-sr.ai/#key); keys are shown once, `sk-vsr-…`).
 
 ```sh
 magpie plugin add opencode-vllm-sr-auth
-magpie plugin login vllm-sr   # paste sk-vsr-…
+magpie plugin login vllm-sr              # pick a method
+magpie plugin login vllm-sr "Create a key automatically"
 ```
 
 In the magpie app: Plugins → add the plugin → sign in on the vLLM-SR row.

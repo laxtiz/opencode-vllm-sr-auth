@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 // OpenCode / magpie provider plugin for the vLLM-SR Decision API
 // (https://decision.vllm-sr.ai), a free System One decision-model service.
 //
@@ -7,6 +9,45 @@
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://decision.vllm-sr.ai"
+const VERSION = "0.2.0"
+
+// Key auto-registration, per https://decision.vllm-sr.ai/docs#authentication
+// ("Create a key from a terminal"): solve the proof-of-work challenge
+// locally, no browser and no account, then return the key from `authorize`.
+// A challenge is single-use, expires after 10 minutes, and each address may
+// ask for 20 per minute; key creation itself is rate-limited per address.
+async function createKey() {
+  const res = await fetch(`${BASE}/api/keys/challenge`, { method: "POST" })
+  if (!res.ok) throw new Error(`Decision API answered ${res.status} asking for a challenge`)
+  const c = await res.json()
+  // The doc's test: SHA-256 of "challenge:nonce" read as a big-endian integer
+  // below 1 << (256 - difficulty) — that is, its leading zero bits number at
+  // least `difficulty`. At the usual difficulty of 20 that is a million
+  // hashes, a second or two.
+  const prefix = `${c.challenge}:`
+  const solves = (digest) => {
+    let zeros = 0
+    for (const byte of digest) {
+      if (byte === 0) {
+        zeros += 8
+        continue
+      }
+      zeros += Math.clz32(byte) - 24
+      break
+    }
+    return zeros >= c.difficulty
+  }
+  let nonce = 0
+  while (!solves(createHash("sha256").update(prefix + nonce).digest())) nonce++
+  const done = await fetch(`${BASE}/api/keys`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ challenge: c.challenge, nonce: String(nonce), accept_terms: true }),
+  })
+  if (!done.ok) throw new Error(`Decision API answered ${done.status} creating the key`)
+  const k = await done.json()
+  return k.api_key
+}
 
 const DEFAULT_MODELS = {
   "vllm-sr/d3-ultra": { name: "Decision d3-ultra" },
@@ -43,7 +84,23 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
 
   auth: {
     provider: PROVIDER,
-    methods: [{ type: "api", label: "Decision API key", placeholder: "sk-vsr-…" }],
+    methods: [
+      { type: "api", label: "Decision API key", placeholder: "sk-vsr-…" },
+      {
+        // an oauth method so magpie runs `authorize` right away, with no key
+        // input box: magpie asks for a key on every `type: "api"` method,
+        // useful or not. The callback answers at once, so no browser opens.
+        type: "oauth",
+        label: "Create a key automatically",
+        authorize: async () => ({
+          method: "auto",
+          instructions: "Creating a key at decision.vllm-sr.ai…",
+          async callback() {
+            return { type: "success", key: await createKey() }
+          },
+        }),
+      },
+    ],
 
     // Every request this account sends carries its key.
     async loader(getAuth) {
@@ -54,7 +111,7 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
         async fetch(input, init) {
           const headers = new Headers(init?.headers)
           headers.set("authorization", `Bearer ${auth.key}`)
-          headers.set("x-vllm-sr-client", "opencode-vllm-sr-auth/0.1.0")
+          headers.set("x-vllm-sr-client", `opencode-vllm-sr-auth/${VERSION}`)
           return fetch(input, { ...init, headers })
         },
       }
