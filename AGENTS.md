@@ -28,18 +28,19 @@ Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to the [
 Key creation is rate-limited per network address (429 `key_creation_limited`, `Retry-After: 3600`) and the challenge endpoint also has a per-minute cap. **Never run a sign-in flow test against the real `decision.vllm-sr.ai`** — it burns the user's quota for the hour. Always:
 
 1. Start the mock: `node test/mock.mjs` (127.0.0.1:3497; difficulty 8, so the PoW is instant).
-2. Copy the plugin to the sandbox and point it there:
+2. Use the persistent sandbox `/tmp/opencode/magpie-sb`, never a fresh `mktemp -d` per test: a new HOME makes magpie re-download bun and the plugin-host (76 MB, and it can time out). Set it up once, then reuse:
    ```sh
-   sb=$(mktemp -d /tmp/opencode/sr.XXXX); mkdir -p $sb/plug
-   cp index.mjs $sb/plug/
-   sed -i 's#const BASE = "https://decision.vllm-sr.ai"#const BASE = "http://127.0.0.1:3497"#' $sb/plug/index.mjs
+   export HOME=/tmp/opencode/magpie-sb XDG_CONFIG_HOME=/tmp/opencode/magpie-sb/.config XDG_CACHE_HOME=/tmp/opencode/magpie-sb/.cache MAGPIE_ADDR=127.0.0.1:3499
+   mkdir -p /tmp/opencode/magpie-sb/plug
+   cp index.mjs package.json /tmp/opencode/magpie-sb/plug/
+   sed -i 's#const BASE = "https://decision.vllm-sr.ai"#const BASE = "http://127.0.0.1:3497"#' /tmp/opencode/magpie-sb/plug/index.mjs
    node test/mock.mjs &
-   m() { env HOME=$sb XDG_CONFIG_HOME=$sb/.config XDG_CACHE_HOME=$sb/.cache MAGPIE_ADDR=127.0.0.1:3499 magpie "$@"; }
-   m plugin add $sb/plug </dev/null
+   magpie plugin add /tmp/opencode/magpie-sb/plug </dev/null
    ```
-3. Exercise the flows (`m plugin login vllm-sr …`, `m quota`, `m plugin --json`), then kill the mock and remove the sandbox.
+   After edits, refresh the copy (`cp … && magpie plugin rm … && magpie plugin add …`) or just re-add: the CLI loads the folder contents on every command. If a magpie command hangs with no output, a stale plugin-host from a killed run is the usual cause: `pkill -f magpie-bu[n]` and retry.
+3. Exercise the flows (`magpie plugin login vllm-sr …`, `magpie quota`, `magpie plugin --json`), then kill the mock. Leaving the sandbox in place is fine — it is gitignored territory under /tmp and makes the next run instant.
 
-The mock validates the proof of work the same way the real API does (leading zero bits of SHA-256 ≥ difficulty), so a passing run means the logic is right, not just that a call happened. Real-API calls are only for one-shot verifications the user asks for.
+The mock validates the proof of work the same way the real API does (leading zero bits of SHA-256 ≥ difficulty), so a passing run means the logic is right, not just that a call happened. Its `/api/keys/self/usage` returns deliberately lopsided numbers (requests nearly spent, tokens barely touched) so a `used` bug shows in `magpie quota` at once. Real-API calls are only for one-shot verifications the user asks for.
 
 ## Sign-in and identity
 
