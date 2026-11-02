@@ -49,6 +49,5 @@ The mock validates the proof of work the same way the real API does (leading zer
 
 ## Display-name and metadata facts (verified against magpie source)
 
-- A locally-added folder plugin's display name in the app is its **folder name**; there is no override field. Friendly names like "MiniMax Code" come from the community `registry.json` and only apply to published packages.
-- `package.json` `magpie` object supports only `icon` (https URL or data URI, ≤1 MB) and `maxConcurrency`; provider-level extras (`website`, `keys`) go in the `config` hook's provider object, not `package.json`.
+- A locally-added folder plugin's display name comes from `package.json` `magpie.name` (one line, ≤80 bytes); without it, it is the folder name. `magpie.name` only applies to plugins the community `registry.json` does not list — the registry's name wins there. The `magpie` object also supports `icon` (https URL or data URI, ≤1 MB) and `maxConcurrency`; provider-level extras (`website`, `keys`) go in the `config` hook's provider object, not `package.json`.
 - `keywords` must keep `opencode` + `opencode-plugin` + vendor for npm search to find it; keep `files` in sync (README.md is shown as the plugin's detail page).

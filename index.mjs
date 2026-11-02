@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://decision.vllm-sr.ai"
-const VERSION = "0.2.0"
+const VERSION = "0.2.1"
 
 // Key auto-registration, per https://decision.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
