@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://decision.vllm-sr.ai"
-const VERSION = "0.2.1"
+const VERSION = "0.2.2"
 
 // Key auto-registration, per https://decision.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -87,18 +87,12 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
     methods: [
       { type: "api", label: "Decision API key", placeholder: "sk-vsr-…" },
       {
-        // an oauth method so magpie runs `authorize` right away, with no key
-        // input box: magpie asks for a key on every `type: "api"` method,
-        // useful or not. The callback answers at once, so no browser opens.
-        type: "oauth",
+        // keyless so magpie runs `authorize` straight away with no key input
+        // box: magpie prompts for a key on every plain type "api" method.
+        type: "api",
+        keyless: true,
         label: "Create a key automatically",
-        authorize: async () => ({
-          method: "auto",
-          instructions: "Creating a key at decision.vllm-sr.ai…",
-          async callback() {
-            return { type: "success", key: await createKey() }
-          },
-        }),
+        authorize: async () => ({ type: "success", key: await createKey() }),
       },
     ],
 
