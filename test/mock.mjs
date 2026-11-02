@@ -57,11 +57,14 @@ createServer((req, res) => {
         res.writeHead(401)
         return res.end()
       }
+      // d3-flash: requests nearly exhausted, tokens barely touched — used
+      // must follow the request budget (99%), not the token one (1%)
       return json(200, {
         quota: {
           resets_at: new Date(Date.now() + 3600_000).toISOString(),
           models: [
-            { id: "vllm-sr/d3-flash", tokens_today: 1, tokens_left: 99, requests_today: 1, requests_left: 9 },
+            { id: "vllm-sr/d3-flash", requests_today: 427680, requests_left: 4320, tokens_today: 4500000, tokens_left: 445500000 },
+            { id: "vllm-sr/d3-ultra", requests_today: 6480, requests_left: 641520, tokens_today: 486000000, tokens_left: 54000000 },
           ],
         },
       })

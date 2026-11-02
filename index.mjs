@@ -9,7 +9,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://decision.vllm-sr.ai"
-const VERSION = "0.2.2"
+const VERSION = "0.3.0"
 
 // Key auto-registration, per https://decision.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -84,6 +84,9 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
 
   auth: {
     provider: PROVIDER,
+    // a free key is not one of several accounts to rotate through: one
+    // sign-in per magpie, so routing never waits on account selection
+    single: true,
     methods: [
       { type: "api", label: "Decision API key", placeholder: "sk-vsr-…" },
       {
@@ -112,7 +115,10 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
     },
 
     // magpie's own hook: how much of the key's daily quota is used.
-    // Daily quotas reset at 00:00 UTC and are counted per model.
+    // Daily quotas reset at 00:00 UTC and are counted per model, in both
+    // requests and input tokens; whichever budget is tighter decides, so
+    // `used` is the larger of the two ratios — many small requests fill
+    // the request budget first, big inputs the token budget.
     async usage(getAuth) {
       const auth = await getAuth()
       if (auth?.type !== "api") return { plan: "Free", windows: [] }
@@ -127,18 +133,23 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
       if (!res.ok) return { error: `Decision API answered ${res.status}`, windows: [] }
       const u = await res.json()
       const fmt = (n) => (n ?? 0).toLocaleString("en-US")
+      const share = (today, left) => {
+        const total = (today ?? 0) + (left ?? 0)
+        return total > 0 ? (today ?? 0) / total : 0
+      }
       const windows = (u.quota?.models ?? []).map((m) => {
         const short = m.id.replace("vllm-sr/", "")
         const tokensTotal = (m.tokens_today ?? 0) + (m.tokens_left ?? 0)
         const requestsTotal = (m.requests_today ?? 0) + (m.requests_left ?? 0)
-        const used =
-          tokensTotal > 0 ? Math.round(((m.tokens_today ?? 0) / tokensTotal) * 100) : 0
+        const used = Math.round(
+          Math.max(share(m.requests_today, m.requests_left), share(m.tokens_today, m.tokens_left)) * 100,
+        )
         return {
           name: short,
           used,
           resetsAt: u.quota?.resets_at,
           span: 86400,
-          display: `${fmt(m.tokens_today)} / ${fmt(tokensTotal)} tokens · ${fmt(m.requests_today)} / ${fmt(requestsTotal)} requests`,
+          display: `${fmt(m.requests_today)} / ${fmt(requestsTotal)} requests · ${fmt(m.tokens_today)} / ${fmt(tokensTotal)} tokens`,
         }
       })
       return { plan: "Free", windows }

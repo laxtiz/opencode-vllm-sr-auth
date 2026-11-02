@@ -44,7 +44,7 @@ The mock validates the proof of work the same way the real API does (leading zer
 ## Sign-in and identity
 
 - Sign-in state lives in magpie's `plugin-auth.json`, keyed by provider id `vllm-sr` — not by the plugin path. Moving/renaming the folder is safe, but re-register it: `magpie plugin rm <old-path> && magpie plugin add <new-path>`.
-- `auth.usage` reads `GET /api/keys/self/usage`; daily quotas reset 00:00 UTC per model. Format user-facing numbers with `toLocaleString("en-US")` (thousands separators) — keep this convention in any new display string.
+- `auth.usage` reads `GET /api/keys/self/usage`; daily quotas reset 00:00 UTC per model. Each model has a request budget and a token budget; `used` is the larger share of the two — many small requests fill the request budget first. Format user-facing numbers with `toLocaleString("en-US")` (thousands separators) — keep this convention in any new display string.
 - Errors meant to flag a dead sign-in must carry `signIn: "expired"`; a plain 401 from `fetch` also marks the account.
 
 ## Display-name and metadata facts (verified against magpie source)
