@@ -23,8 +23,8 @@ const s1Quota = {
   // d3-flash: requests nearly exhausted, tokens barely touched — used must
   // follow the request budget (99%); d3-ultra the reverse (tokens 90%)
   models: [
-    { id: "vllm-sr/d3-flash", requests_today: 748440, requests_left: 7560, tokens_today: 6480000, tokens_left: 641520000 },
-    { id: "vllm-sr/d3-ultra", requests_today: 6480, requests_left: 641520, tokens_today: 486000000, tokens_left: 54000000 },
+    { id: "vllm-sr/d3-flash", requests_today: 748440, requests_left: 7560, requests_per_day: 756000, tokens_today: 6480000, tokens_left: 641520000, tokens_per_day: 648000000 },
+    { id: "vllm-sr/d3-ultra", requests_today: 6480, requests_left: 641520, requests_per_day: 648000, tokens_today: 486000000, tokens_left: 54000000, tokens_per_day: 540000000 },
   ],
 }
 

@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.3"
+const VERSION = "0.4.4"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -159,7 +159,7 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
       const usedPct = (q) =>
         Math.round(Math.max(share(q.requests_today, q.requests_left), share(q.tokens_today, q.tokens_left)) * 100)
       const display = (q) =>
-        `${fmt(q.requests_today)} / ${fmt((q.requests_today ?? 0) + (q.requests_left ?? 0))} requests · ${fmt(q.tokens_today)} / ${fmt((q.tokens_today ?? 0) + (q.tokens_left ?? 0))} tokens`
+        `${fmt(q.requests_today)} / ${fmt(q.requests_per_day)} requests · ${fmt(q.tokens_today)} / ${fmt(q.tokens_per_day)} tokens`
       const window = (name, quota) => ({
         name,
         used: usedPct(quota),
