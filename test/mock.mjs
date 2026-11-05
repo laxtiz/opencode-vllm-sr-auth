@@ -1,20 +1,46 @@
-// A local mock of the Decision API's key endpoints, for testing the
+// A local mock of vLLM-SR's key and model endpoints, for testing the
 // plugin's sign-in flows without spending the real network address's
 // key-creation quota (429 key_creation_limited, Retry-After: 3600).
 //
-//   node test/mock.mjs            # challenge + key creation on 127.0.0.1:3497
+//   node test/mock.mjs            # 127.0.0.1:3497
 //
-// Then point the plugin at it and run magpie in a sandbox (see AGENTS.md):
-// the plugin's BASE must read http://127.0.0.1:3497 in that copy.
+// Then point the plugin at it and run magpie in the persistent sandbox
+// (see AGENTS.md): the plugin's BASE must read http://127.0.0.1:3497 in
+// that copy.
 //
-// Serves POST /api/keys/challenge (difficulty 8, fast to solve),
-// POST /api/keys (validates the proof of work, one use per challenge),
-// GET /api/keys/self/usage (a small quota for any sk-vsr- key).
+// Serves POST /api/keys/challenge (difficulty 8, fast to solve), POST
+// /api/keys (validates the proof of work, one use per challenge), GET
+// /v1/systemone/models, GET /pt/api/info, and both usage endpoints with
+// deliberately lopsided numbers so a `used` bug shows at once.
 import { createHash } from "node:crypto"
 import { createServer } from "node:http"
 
 const PORT = 3497
 const created = new Set()
+
+const s1Quota = {
+  resets_at: new Date(Date.now() + 3600_000).toISOString(),
+  // d3-flash: requests nearly exhausted, tokens barely touched — used must
+  // follow the request budget (99%); d3-ultra the reverse (tokens 90%)
+  models: [
+    { id: "vllm-sr/d3-flash", requests_today: 748440, requests_left: 7560, tokens_today: 6480000, tokens_left: 641520000 },
+    { id: "vllm-sr/d3-ultra", requests_today: 6480, requests_left: 641520, tokens_today: 486000000, tokens_left: 54000000 },
+  ],
+}
+
+const s2Quota = {
+  day: new Date().toISOString().slice(0, 10),
+  resets_at: new Date(Date.now() + 3600_000).toISOString(),
+  requests_today: 54000,
+  requests_left: 54000,
+  requests_per_day: 108000,
+  requests_per_minute: 180,
+  tokens_today: 180000000,
+  tokens_left: 180000000,
+  tokens_per_day: 360000000,
+  tokens_per_minute: 600000,
+  max_concurrency: 16,
+}
 
 createServer((req, res) => {
   const body = []
@@ -51,24 +77,38 @@ createServer((req, res) => {
       created.add(b.challenge)
       return json(201, { api_key: `sk-vsr-mock-${Math.random().toString(16).slice(2)}` })
     }
+    if (req.url === "/v1/systemone/models") {
+      return json(200, {
+        data: [
+          { id: "vllm-sr/d3-ultra" },
+          { id: "vllm-sr/d3-flash" },
+          { id: "vllm-sr/d3-mini", alias_of: "vllm-sr/d3-flash" },
+          { id: "vllm-sr/vela3-turbo" },
+          { id: "vllm-sr/vela3-flash" },
+        ],
+      })
+    }
+    if (req.url === "/pt/api/info") {
+      return json(200, {
+        models: [{ id: "vllm-sr/auto", routes_to: ["zai/glm-5.3-flash", "qwen/qwen3.8-27b"] }],
+      })
+    }
     if (req.url === "/api/keys/self/usage") {
       const auth = (req.headers.authorization || "").replace("Bearer ", "")
       if (!auth.startsWith("sk-vsr-")) {
         res.writeHead(401)
         return res.end()
       }
-      // d3-flash: requests nearly exhausted, tokens barely touched — used
-      // must follow the request budget (99%), not the token one (1%)
-      return json(200, {
-        quota: {
-          resets_at: new Date(Date.now() + 3600_000).toISOString(),
-          models: [
-            { id: "vllm-sr/d3-flash", requests_today: 427680, requests_left: 4320, tokens_today: 4500000, tokens_left: 445500000 },
-            { id: "vllm-sr/d3-ultra", requests_today: 6480, requests_left: 641520, tokens_today: 486000000, tokens_left: 54000000 },
-          ],
-        },
-      })
+      return json(200, { quota: s1Quota })
+    }
+    if (req.url === "/pt/api/keys/self/usage") {
+      const auth = (req.headers.authorization || "").replace("Bearer ", "")
+      if (!auth.startsWith("sk-vsr-")) {
+        res.writeHead(401)
+        return res.end()
+      }
+      return json(200, { quota: s2Quota })
     }
     json(404, {})
   })
-}).listen(PORT, "127.0.0.1", () => console.log(`decision-api mock on 127.0.0.1:${PORT}`))
+}).listen(PORT, "127.0.0.1", () => console.log(`vLLM-SR mock on 127.0.0.1:${PORT}`))

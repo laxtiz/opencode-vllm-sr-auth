@@ -1,15 +1,20 @@
 # AGENTS.md
 
-Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to the [vLLM-SR Decision API](https://decision.vllm-sr.ai) (free System One decision models) and turns it into provider `vllm-sr`. Protocol reference: <https://decision.vllm-sr.ai/docs>.
+Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to [vLLM-SR](https://app.vllm-sr.ai) (free System Duo: System One decision models plus the System Two chat router) and turns it into provider `vllm-sr`. Protocol reference: <https://app.vllm-sr.ai/docs>.
 
 ## The one rule that breaks the plugin
 
 `index.mjs` must export **only** the plugin function (`VllmSrAuthPlugin`). magpie calls every function exported from the entry module as a plugin. Put helpers in module-local constants, or on `export const _internal` for tests.
 
-## Decision models, not chat models
+## Two systems, one decide switch
 
-- All models carry `decides: true` and the provider `decide: true`: magpie offers them as routing-group classifiers and hides them from agents. Do not remove these flags or add chat models — the upstream cannot generate text.
-- `npm: "@ai-sdk/openai-compatible"` is a placeholder; no chat request ever reaches it.
+- The provider keeps `decide: true` — magpie's docs: without it, `decides` has no effect and **every** model is used for chat. The per-model `decides: true` flag is what makes a model a hidden classifier; `vllm-sr/auto` (System Two, real chat) omits it and stays visible.
+- System One models get a one-token output budget; `vllm-sr/auto` gets a real one and `tool_call: true`.
+- `npm: "@ai-sdk/openai-compatible"` serves both: the upstream speaks OpenAI Chat Completions on `/v1/chat/completions` (System Two) and magpie posts decisions to `{baseURL}/systemone` (System One).
+
+## Model ids: bare names, not full ids
+
+Model-map keys (config hook and models hook) must be **bare** (`auto`, `d3-flash`); magpie prefixes the provider id itself. Full ids as keys produce doubled ids (`vllm-sr/vllm-sr/auto`). The models hook sets `id` to the full upstream id.
 
 ## Developing against the real magpie
 
@@ -45,7 +50,7 @@ The mock validates the proof of work the same way the real API does (leading zer
 ## Sign-in and identity
 
 - Sign-in state lives in magpie's `plugin-auth.json`, keyed by provider id `vllm-sr` — not by the plugin path. Moving/renaming the folder is safe, but re-register it: `magpie plugin rm <old-path> && magpie plugin add <new-path>`.
-- `auth.usage` reads `GET /api/keys/self/usage`; daily quotas reset 00:00 UTC per model. Each model has a request budget and a token budget; `used` is the larger share of the two — many small requests fill the request budget first. Format user-facing numbers with `toLocaleString("en-US")` (thousands separators) — keep this convention in any new display string.
+- `auth.usage` reads both systems: `/api/keys/self/usage` (System One, `quota.models[]` per model) and `/pt/api/keys/self/usage` (System Two, flat `quota` for the pool behind `vllm-sr/auto` — a different shape and endpoint, the `/pt/` prefix is System Two's, not an old-key thing). Each model has a request budget and a token budget; `used` is the larger share of the two — many small requests fill the request budget first. Format user-facing numbers with `toLocaleString("en-US")` (thousands separators) — keep this convention in any new display string.
 - Errors meant to flag a dead sign-in must carry `signIn: "expired"`; a plain 401 from `fetch` also marks the account.
 
 ## Display-name and metadata facts (verified against magpie source)

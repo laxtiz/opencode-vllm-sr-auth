@@ -1,24 +1,32 @@
 import { createHash } from "node:crypto"
 
-// OpenCode / magpie provider plugin for the vLLM-SR Decision API
-// (https://decision.vllm-sr.ai), a free System One decision-model service.
+// OpenCode / magpie provider plugin for vLLM-SR (https://app.vllm-sr.ai),
+// a free service with two systems on one origin and one key:
 //
-// Decision models answer typed questions with calibrated probabilities and
-// generate no text, so their models are marked `decides: true`: magpie offers
-// them as routing-group classifiers and hides them from agents' model lists.
+// - System One, the decision models: they answer typed questions with
+//   calibrated probabilities and generate no text, so they are marked
+//   `decides: true` — magpie offers them as routing-group classifiers and
+//   hides them from agents' model lists.
+// - System Two, vllm-sr/auto: an OpenAI Chat Completions endpoint whose
+//   router (vLLM Semantic Router) picks a model from its pool per request.
+//   A plain chat model: no decides flag, visible to agents.
+//
+// The provider keeps `decide: true` — magpie's docs: without it, `decides`
+// has no effect and every model is used for chat. The per-model `decides`
+// flag is what separates classifiers from chat models.
 
 const PROVIDER = "vllm-sr"
-const BASE = "https://decision.vllm-sr.ai"
-const VERSION = "0.3.2"
+const BASE = "https://app.vllm-sr.ai"
+const VERSION = "0.4.0"
 
-// Key auto-registration, per https://decision.vllm-sr.ai/docs#authentication
+// Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
 // locally, no browser and no account, then return the key from `authorize`.
 // A challenge is single-use, expires after 10 minutes, and each address may
 // ask for 20 per minute; key creation itself is rate-limited per address.
 async function createKey() {
   const res = await fetch(`${BASE}/api/keys/challenge`, { method: "POST" })
-  if (!res.ok) throw new Error(`Decision API answered ${res.status} asking for a challenge`)
+  if (!res.ok) throw new Error(`vLLM-SR answered ${res.status} asking for a challenge`)
   const c = await res.json()
   // The doc's test: SHA-256 of "challenge:nonce" read as a big-endian integer
   // below 1 << (256 - difficulty) — that is, its leading zero bits number at
@@ -44,25 +52,42 @@ async function createKey() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ challenge: c.challenge, nonce: String(nonce), accept_terms: true }),
   })
-  if (!done.ok) throw new Error(`Decision API answered ${done.status} creating the key`)
+  if (!done.ok) throw new Error(`vLLM-SR answered ${done.status} creating the key`)
   const k = await done.json()
   return k.api_key
 }
 
-const DEFAULT_MODELS = {
-  "vllm-sr/d3-ultra": { name: "Decision d3-ultra" },
-  "vllm-sr/d3-flash": { name: "Decision d3-flash" },
-  "vllm-sr/d3-mini": { name: "Decision d3-mini" },
-  "vllm-sr/d3-nano": { name: "Decision d3-nano" },
-  "vllm-sr/d3-lite": { name: "Decision d3-lite" },
-  "vllm-sr/d3-edge": { name: "Decision d3-edge" },
+// System One: one entry per family, not per retired name — d3-mini/nano/
+// lite/edge are aliases of d3-flash, d3-turbo/d3 of d3-ultra. Keys are the
+// bare model names; magpie prefixes the provider id.
+const S1_MODELS = {
+  "d3-ultra": { name: "Decision d3-ultra" },
+  "d3-flash": { name: "Decision d3-flash" },
+  "vela3-turbo": { name: "Decision vela3-turbo" },
+  "vela3-flash": { name: "Decision vela3-flash" },
 }
 
-const baseModel = {
-  limit: { context: 128000, output: 1 },
+// A decision model generates no text: a one-token output budget. The
+// upstream caps a request's input at 131072 tokens (GET /api/info).
+const s1Model = {
+  limit: { context: 131072, output: 1 },
   tool_call: false,
   free: true,
   decides: true,
+}
+
+// System Two: the router model. Input and output share the service's
+// 131072-token request cap; the pool (today GLM-5.3-Flash and Qwen3.8) does
+// function calling.
+const autoModel = {
+  limit: { context: 131072, output: 16384 },
+  tool_call: true,
+  free: true,
+}
+
+const DEFAULT_MODELS = {
+  ...Object.fromEntries(Object.entries(S1_MODELS).map(([id, m]) => [id, { ...s1Model, ...m }])),
+  auto: { ...autoModel, name: "vLLM-SR Auto" },
 }
 
 export const VllmSrAuthPlugin = async ({ client }) => ({
@@ -70,15 +95,13 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
   config: async (cfg) => {
     cfg.provider ??= {}
     cfg.provider[PROVIDER] ??= {
-      name: "vLLM-SR Decision",
-      npm: "@ai-sdk/openai-compatible", // never used for chat; decides only
+      name: "vLLM-SR",
+      npm: "@ai-sdk/openai-compatible",
       api: `${BASE}/v1`,
-      decide: true,
+      decide: true, // the switch that makes per-model decides effective
       website: BASE,
-      keys: `${BASE}/#key`,
-      models: Object.fromEntries(
-        Object.entries(DEFAULT_MODELS).map(([id, m]) => [id, { ...baseModel, ...m }]),
-      ),
+      keys: `${BASE}/keys`,
+      models: DEFAULT_MODELS,
     }
   },
 
@@ -115,44 +138,61 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
     },
 
     // magpie's own hook: how much of the key's daily quota is used.
-    // Daily quotas reset at 00:00 UTC and are counted per model, in both
-    // requests and input tokens; whichever budget is tighter decides, so
-    // `used` is the larger of the two ratios — many small requests fill
-    // the request budget first, big inputs the token budget.
+    // Both systems reset at 00:00 UTC and count requests and tokens;
+    // whichever budget is tighter decides, so `used` is the larger of the
+    // two ratios — many small requests fill the request budget first, big
+    // inputs the token budget. The systems report on different endpoints:
+    // System One on /api/keys/self/usage (per model), System Two on
+    // /pt/api/keys/self/usage (one pool behind vllm-sr/auto).
     async usage(getAuth) {
       const auth = await getAuth()
       if (auth?.type !== "api") return { plan: "Free", windows: [] }
-      let res
-      try {
-        res = await fetch(`${BASE}/api/keys/self/usage`, {
-          headers: { authorization: `Bearer ${auth.key}` },
-        })
-      } catch (e) {
-        return { error: `Decision API unreachable: ${e}`, windows: [] }
-      }
-      if (!res.ok) return { error: `Decision API answered ${res.status}`, windows: [] }
-      const u = await res.json()
+      const headers = { authorization: `Bearer ${auth.key}` }
       const fmt = (n) => (n ?? 0).toLocaleString("en-US")
       const share = (today, left) => {
         const total = (today ?? 0) + (left ?? 0)
         return total > 0 ? (today ?? 0) / total : 0
       }
-      const windows = (u.quota?.models ?? []).map((m) => {
-        const short = m.id.replace("vllm-sr/", "")
-        const tokensTotal = (m.tokens_today ?? 0) + (m.tokens_left ?? 0)
-        const requestsTotal = (m.requests_today ?? 0) + (m.requests_left ?? 0)
-        const used = Math.round(
-          Math.max(share(m.requests_today, m.requests_left), share(m.tokens_today, m.tokens_left)) * 100,
-        )
-        return {
-          name: short,
-          used,
-          resetsAt: u.quota?.resets_at,
-          span: 86400,
-          display: `${fmt(m.requests_today)} / ${fmt(requestsTotal)} requests · ${fmt(m.tokens_today)} / ${fmt(tokensTotal)} tokens`,
+      const usedPct = (r, t) =>
+        Math.round(Math.max(share(r?.requests_today, r?.requests_left), share(r?.tokens_today, r?.tokens_left)) * 100)
+
+      const windows = []
+      let failed
+      for (const [name, path] of [
+        ["System One", "/api/keys/self/usage"],
+        ["System Two", "/pt/api/keys/self/usage"],
+      ]) {
+        try {
+          const res = await fetch(`${BASE}${path}`, { headers })
+          if (!res.ok) {
+            failed ??= `vLLM-SR answered ${res.status} on ${path}`
+            continue
+          }
+          const u = await res.json()
+          const quota = u.quota ?? {}
+          for (const m of quota.models ?? []) {
+            windows.push({
+              name: m.id.replace("vllm-sr/", ""),
+              used: usedPct(m),
+              resetsAt: quota.resets_at,
+              span: 86400,
+              display: `${fmt(m.requests_today)} / ${fmt((m.requests_today ?? 0) + (m.requests_left ?? 0))} requests · ${fmt(m.tokens_today)} / ${fmt((m.tokens_today ?? 0) + (m.tokens_left ?? 0))} tokens`,
+            })
+          }
+          if (quota.requests_per_day !== undefined || quota.tokens_per_day !== undefined) {
+            windows.push({
+              name: "auto",
+              used: usedPct(quota),
+              resetsAt: quota.resets_at,
+              span: 86400,
+              display: `${fmt(quota.requests_today)} / ${fmt(quota.requests_per_day)} requests · ${fmt(quota.tokens_today)} / ${fmt(quota.tokens_per_day)} tokens`,
+            })
+          }
+        } catch (e) {
+          failed ??= `vLLM-SR unreachable on ${path}: ${e}`
         }
-      })
-      return { plan: "Free", windows }
+      }
+      return windows.length || !failed ? { plan: "Free", windows } : { error: failed, windows: [] }
     },
   },
 
@@ -160,22 +200,30 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
   provider: {
     id: PROVIDER,
     async models(provider, { auth } = {}) {
-      let list
+      // The lists need no key, but ask only for signed-in accounts:
+      // magpie keeps provider.models otherwise.
+      if (auth?.type !== "api") return provider.models
+      let s1, s2
       try {
-        // The model list needs no key, but ask only for signed-in accounts:
-        // magpie keeps provider.models otherwise.
-        if (auth?.type !== "api") return provider.models
-        const res = await fetch(`${BASE}/v1/systemone/models`)
-        if (!res.ok) return provider.models
-        list = (await res.json()).data ?? []
+        const [r1, r2] = await Promise.all([
+          fetch(`${BASE}/v1/systemone/models`),
+          fetch(`${BASE}/pt/api/info`),
+        ])
+        if (!r1.ok || !r2.ok) return provider.models
+        s1 = (await r1.json()).data ?? []
+        s2 = (await r2.json()).models ?? []
       } catch {
         return provider.models // magpie keeps the previous list
       }
       const out = {}
-      for (const m of list) {
+      for (const m of s1) {
         if (m.alias_of) continue // served by the model it aliases
         const short = m.id.replace("vllm-sr/", "")
-        out[m.id] = { ...baseModel, id: m.id, name: `Decision ${short}` }
+        out[short] = { ...s1Model, id: m.id, name: `Decision ${short}` }
+      }
+      for (const m of s2) {
+        const short = m.id.replace("vllm-sr/", "")
+        out[short] = { ...autoModel, id: m.id, name: `vLLM-SR ${short}` }
       }
       return Object.keys(out).length ? out : provider.models
     },
