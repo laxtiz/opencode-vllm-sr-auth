@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.4"
+const VERSION = "0.4.5"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -62,10 +62,10 @@ async function createKey() {
 // FULL upstream ids: magpie sends a model map's key to the upstream as the
 // model field verbatim, and these ids carry the vllm-sr/ prefix.
 const S1_MODELS = {
-  "vllm-sr/d3-ultra": { name: "Decision d3-ultra" },
-  "vllm-sr/d3-flash": { name: "Decision d3-flash" },
-  "vllm-sr/vela3-turbo": { name: "Decision vela3-turbo" },
-  "vllm-sr/vela3-flash": { name: "Decision vela3-flash" },
+  "vllm-sr/d3-ultra": { name: "vLLM-SR d3-ultra" },
+  "vllm-sr/d3-flash": { name: "vLLM-SR d3-flash" },
+  "vllm-sr/vela3-turbo": { name: "vLLM-SR vela3-turbo" },
+  "vllm-sr/vela3-flash": { name: "vLLM-SR vela3-flash" },
 }
 
 // A decision model generates no text: a one-token output budget. The
@@ -88,7 +88,7 @@ const autoModel = {
 
 const DEFAULT_MODELS = {
   ...Object.fromEntries(Object.entries(S1_MODELS).map(([id, m]) => [id, { ...s1Model, ...m }])),
-  "vllm-sr/auto": { ...autoModel, name: "vLLM-SR Auto" },
+  "vllm-sr/auto": { ...autoModel, name: "vLLM-SR auto" },
 }
 
 export const VllmSrAuthPlugin = async ({ client }) => ({
@@ -217,9 +217,7 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
         // System Two marks itself ("system": "two"); everything else is a
         // System One decision model
         const two = m.system === "two"
-        out[m.id] = two
-          ? { ...autoModel, id: m.id, name: `vLLM-SR ${short}` }
-          : { ...s1Model, id: m.id, name: `Decision ${short}` }
+        out[m.id] = { ...(two ? autoModel : s1Model), id: m.id, name: `vLLM-SR ${short}` }
       }
       return Object.keys(out).length ? out : provider.models
     },
