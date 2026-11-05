@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.2"
+const VERSION = "0.4.3"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -142,9 +142,11 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
     // Both systems reset at 00:00 UTC and count requests and tokens;
     // whichever budget is tighter decides, so `used` is the larger of the
     // two ratios — many small requests fill the request budget first, big
-    // inputs the token budget. The systems report on different endpoints:
-    // System One on /api/keys/self/usage (per model), System Two on
-    // /pt/api/keys/self/usage (one pool behind vllm-sr/auto).
+    // inputs the token budget. The systems report differently and on
+    // different endpoints, so each is read and unpacked on its own:
+    // System One returns a quota entry per model on /api/keys/self/usage,
+    // System Two one flat quota for the pool behind vllm-sr/auto on
+    // /pt/api/keys/self/usage.
     async usage(getAuth) {
       const auth = await getAuth()
       if (auth?.type !== "api") return { plan: "Free", windows: [] }
@@ -154,46 +156,42 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
         const total = (today ?? 0) + (left ?? 0)
         return total > 0 ? (today ?? 0) / total : 0
       }
-      const usedPct = (r, t) =>
-        Math.round(Math.max(share(r?.requests_today, r?.requests_left), share(r?.tokens_today, r?.tokens_left)) * 100)
-
-      const windows = []
-      let failed
-      for (const [name, path] of [
-        ["System One", "/api/keys/self/usage"],
-        ["System Two", "/pt/api/keys/self/usage"],
-      ]) {
+      const usedPct = (q) =>
+        Math.round(Math.max(share(q.requests_today, q.requests_left), share(q.tokens_today, q.tokens_left)) * 100)
+      const display = (q) =>
+        `${fmt(q.requests_today)} / ${fmt((q.requests_today ?? 0) + (q.requests_left ?? 0))} requests · ${fmt(q.tokens_today)} / ${fmt((q.tokens_today ?? 0) + (q.tokens_left ?? 0))} tokens`
+      const window = (name, quota) => ({
+        name,
+        used: usedPct(quota),
+        resetsAt: quota.resets_at,
+        span: 86400,
+        display: display(quota),
+      })
+      const read = async (path) => {
         try {
           const res = await fetch(`${BASE}${path}`, { headers })
-          if (!res.ok) {
-            failed ??= `vLLM-SR answered ${res.status} on ${path}`
-            continue
-          }
-          const u = await res.json()
-          const quota = u.quota ?? {}
-          for (const m of quota.models ?? []) {
-            windows.push({
-              name: m.id.replace("vllm-sr/", ""),
-              used: usedPct(m),
-              resetsAt: quota.resets_at,
-              span: 86400,
-              display: `${fmt(m.requests_today)} / ${fmt((m.requests_today ?? 0) + (m.requests_left ?? 0))} requests · ${fmt(m.tokens_today)} / ${fmt((m.tokens_today ?? 0) + (m.tokens_left ?? 0))} tokens`,
-            })
-          }
-          if (quota.requests_per_day !== undefined || quota.tokens_per_day !== undefined) {
-            windows.push({
-              name: "auto",
-              used: usedPct(quota),
-              resetsAt: quota.resets_at,
-              span: 86400,
-              display: `${fmt(quota.requests_today)} / ${fmt(quota.requests_per_day)} requests · ${fmt(quota.tokens_today)} / ${fmt(quota.tokens_per_day)} tokens`,
-            })
-          }
+          if (!res.ok) return { error: `vLLM-SR answered ${res.status} on ${path}` }
+          return { quota: (await res.json()).quota ?? {} }
         } catch (e) {
-          failed ??= `vLLM-SR unreachable on ${path}: ${e}`
+          return { error: `vLLM-SR unreachable on ${path}: ${e}` }
         }
       }
-      return windows.length || !failed ? { plan: "Free", windows } : { error: failed, windows: [] }
+
+      const [s1, s2] = await Promise.all([
+        read("/api/keys/self/usage"),
+        read("/pt/api/keys/self/usage"),
+      ])
+      const windows = []
+      if (s1.quota) {
+        for (const m of s1.quota.models ?? []) {
+          windows.push(window(m.id.replace("vllm-sr/", ""), m))
+        }
+      }
+      if (s2.quota) windows.push(window("auto", s2.quota))
+      const errors = [s1.error, s2.error].filter(Boolean)
+      return errors.length && !windows.length
+        ? { error: errors.join("; "), windows: [] }
+        : { plan: "Free", windows }
     },
   },
 
