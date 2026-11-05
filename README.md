@@ -18,7 +18,7 @@ System One:
 | `vllm-sr/vela3-turbo` | 27B | d3-ultra's set + span |
 | `vllm-sr/vela3-flash` | 9B | d3-flash's set + span |
 
-The list is refreshed from [`GET /v1/systemone/models`](https://app.vllm-sr.ai/docs) for signed-in accounts. Retired names (`d3-turbo`, `d3`, `d3-mini`, `d3-nano`, `d3-lite`, `d3-edge`) still work upstream and are served by the model each names, so they are not listed separately.
+The list is refreshed from [`GET /v1/models`](https://app.vllm-sr.ai/docs) for signed-in accounts — one call answers both systems: `"system": "two"` marks System Two, `alias_of` marks retired names. Retired names (`d3-turbo`, `d3`, `d3-mini`, `d3-nano`, `d3-lite`, `d3-edge`) still work upstream and are served by the model each names, so they are not listed separately.
 
 System Two:
 

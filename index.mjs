@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.5"
+const VERSION = "0.5.0"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
