@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.1"
+const VERSION = "0.4.2"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -201,29 +201,27 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
   provider: {
     id: PROVIDER,
     async models(provider, { auth } = {}) {
-      // The lists need no key, but ask only for signed-in accounts:
+      // The list needs no key, but ask only for signed-in accounts:
       // magpie keeps provider.models otherwise.
       if (auth?.type !== "api") return provider.models
-      let s1, s2
+      let list
       try {
-        const [r1, r2] = await Promise.all([
-          fetch(`${BASE}/v1/systemone/models`),
-          fetch(`${BASE}/pt/api/info`),
-        ])
-        if (!r1.ok || !r2.ok) return provider.models
-        s1 = (await r1.json()).data ?? []
-        s2 = (await r2.json()).models ?? []
+        const res = await fetch(`${BASE}/v1/models`)
+        if (!res.ok) return provider.models
+        list = (await res.json()).data ?? []
       } catch {
         return provider.models // magpie keeps the previous list
       }
       const out = {}
-      for (const m of s1) {
+      for (const m of list) {
         if (m.alias_of) continue // served by the model it aliases
         const short = m.id.replace("vllm-sr/", "")
-        out[m.id] = { ...s1Model, id: m.id, name: `Decision ${short}` }
-      }
-      for (const m of s2) {
-        out[m.id] = { ...autoModel, id: m.id, name: `vLLM-SR ${m.id.replace("vllm-sr/", "")}` }
+        // System Two marks itself ("system": "two"); everything else is a
+        // System One decision model
+        const two = m.system === "two"
+        out[m.id] = two
+          ? { ...autoModel, id: m.id, name: `vLLM-SR ${short}` }
+          : { ...s1Model, id: m.id, name: `Decision ${short}` }
       }
       return Object.keys(out).length ? out : provider.models
     },

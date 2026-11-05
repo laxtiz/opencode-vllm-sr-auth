@@ -98,6 +98,19 @@ createServer((req, res) => {
         usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       })
     }
+    if (req.url === "/v1/models") {
+      return json(200, {
+        data: [
+          { id: "vllm-sr/d3-ultra", object: "model", owned_by: "vllm-sr" },
+          { id: "vllm-sr/d3-turbo", object: "model", owned_by: "vllm-sr", alias_of: "vllm-sr/d3-ultra" },
+          { id: "vllm-sr/d3-flash", object: "model", owned_by: "vllm-sr" },
+          { id: "vllm-sr/d3-mini", object: "model", owned_by: "vllm-sr", alias_of: "vllm-sr/d3-flash" },
+          { id: "vllm-sr/vela3-turbo", object: "model", owned_by: "vllm-sr" },
+          { id: "vllm-sr/vela3-flash", object: "model", owned_by: "vllm-sr" },
+          { id: "vllm-sr/auto", object: "model", owned_by: "vllm-sr", system: "two" },
+        ],
+      })
+    }
     if (req.url === "/v1/systemone/models") {
       return json(200, {
         data: [

@@ -1,6 +1,6 @@
 {
   "name": "opencode-vllm-sr-auth",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "vLLM-SR Decision — System One decision models (choice/noul/score/box) for OpenCode and magpie",
   "type": "module",
   "main": "./index.mjs",
