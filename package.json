@@ -1,6 +1,6 @@
 {
   "name": "opencode-vllm-sr-auth",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "vLLM-SR System Duo — System One decision models (choice/noul/score/box/span) plus the System Two chat router, for OpenCode and magpie",
   "type": "module",
   "main": "./index.mjs",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": "github:laxtiz/opencode-vllm-sr-auth",
   "magpie": {
-    "name": "vLLM-SR Decision",
+    "name": "vLLM-SR",
     "icon": "https://app.vllm-sr.ai/assets/favicon.svg",
     "maxConcurrency": 8
   }
