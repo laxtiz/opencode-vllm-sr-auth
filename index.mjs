@@ -17,7 +17,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.4.0"
+const VERSION = "0.4.1"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -59,12 +59,13 @@ async function createKey() {
 
 // System One: one entry per family, not per retired name — d3-mini/nano/
 // lite/edge are aliases of d3-flash, d3-turbo/d3 of d3-ultra. Keys are the
-// bare model names; magpie prefixes the provider id.
+// FULL upstream ids: magpie sends a model map's key to the upstream as the
+// model field verbatim, and these ids carry the vllm-sr/ prefix.
 const S1_MODELS = {
-  "d3-ultra": { name: "Decision d3-ultra" },
-  "d3-flash": { name: "Decision d3-flash" },
-  "vela3-turbo": { name: "Decision vela3-turbo" },
-  "vela3-flash": { name: "Decision vela3-flash" },
+  "vllm-sr/d3-ultra": { name: "Decision d3-ultra" },
+  "vllm-sr/d3-flash": { name: "Decision d3-flash" },
+  "vllm-sr/vela3-turbo": { name: "Decision vela3-turbo" },
+  "vllm-sr/vela3-flash": { name: "Decision vela3-flash" },
 }
 
 // A decision model generates no text: a one-token output budget. The
@@ -87,7 +88,7 @@ const autoModel = {
 
 const DEFAULT_MODELS = {
   ...Object.fromEntries(Object.entries(S1_MODELS).map(([id, m]) => [id, { ...s1Model, ...m }])),
-  auto: { ...autoModel, name: "vLLM-SR Auto" },
+  "vllm-sr/auto": { ...autoModel, name: "vLLM-SR Auto" },
 }
 
 export const VllmSrAuthPlugin = async ({ client }) => ({
@@ -219,11 +220,10 @@ export const VllmSrAuthPlugin = async ({ client }) => ({
       for (const m of s1) {
         if (m.alias_of) continue // served by the model it aliases
         const short = m.id.replace("vllm-sr/", "")
-        out[short] = { ...s1Model, id: m.id, name: `Decision ${short}` }
+        out[m.id] = { ...s1Model, id: m.id, name: `Decision ${short}` }
       }
       for (const m of s2) {
-        const short = m.id.replace("vllm-sr/", "")
-        out[short] = { ...autoModel, id: m.id, name: `vLLM-SR ${short}` }
+        out[m.id] = { ...autoModel, id: m.id, name: `vLLM-SR ${m.id.replace("vllm-sr/", "")}` }
       }
       return Object.keys(out).length ? out : provider.models
     },

@@ -12,9 +12,9 @@ Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to [vLLM
 - System One models get a one-token output budget; `vllm-sr/auto` gets a real one and `tool_call: true`.
 - `npm: "@ai-sdk/openai-compatible"` serves both: the upstream speaks OpenAI Chat Completions on `/v1/chat/completions` (System Two) and magpie posts decisions to `{baseURL}/systemone` (System One).
 
-## Model ids: bare names, not full ids
+## Model ids: map keys are the upstream ids, prefix included
 
-Model-map keys (config hook and models hook) must be **bare** (`auto`, `d3-flash`); magpie prefixes the provider id itself. Full ids as keys produce doubled ids (`vllm-sr/vllm-sr/auto`). The models hook sets `id` to the full upstream id.
+A model map's key (config hook and models hook) is what magpie sends to the upstream as the `model` field — verbatim. These upstream ids carry the `vllm-sr/` prefix, so the keys must too (`vllm-sr/auto`, not `auto`); bare keys send bare names and the upstream answers 404. The agent-facing id becomes `vllm-sr/<key>`, so `vllm-sr/auto` shows as `vllm-sr/vllm-sr/auto` in agent model lists — cosmetic, correct on the wire.
 
 ## Developing against the real magpie
 

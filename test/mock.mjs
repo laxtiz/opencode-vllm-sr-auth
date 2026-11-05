@@ -77,6 +77,27 @@ createServer((req, res) => {
       created.add(b.challenge)
       return json(201, { api_key: `sk-vsr-mock-${Math.random().toString(16).slice(2)}` })
     }
+    if (req.url === "/v1/systemone" && req.method === "POST") {
+      const b = JSON.parse(Buffer.concat(body).toString() || "{}")
+      // same idea: log the model id magpie puts on decision requests
+      console.log(`[mock] decide model received: ${JSON.stringify(b.model)}`)
+      const answers = {}
+      for (const q of Object.keys(b.questions ?? {})) answers[q] = { choice: "code", score: 1, confidence: 0.9 }
+      return json(200, { model: b.model, answers })
+    }
+    if (req.url === "/v1/chat/completions") {
+      const b = JSON.parse(Buffer.concat(body).toString() || "{}")
+      // echo the model id magpie put on the request — the whole point of
+      // this endpoint is to see what magpie sends upstream
+      console.log(`[mock] chat model received: ${JSON.stringify(b.model)}`)
+      return json(200, {
+        id: "chatcmpl-mock",
+        object: "chat.completion",
+        model: b.model,
+        choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      })
+    }
     if (req.url === "/v1/systemone/models") {
       return json(200, {
         data: [
