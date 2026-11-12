@@ -8,8 +8,8 @@ Provider plugin for [magpie](https://usemagpie.ai) / OpenCode: signs in to [vLLM
 
 ## Two systems, one decide switch
 
-- The provider keeps `decide: true` — magpie's docs: without it, `decides` has no effect and **every** model is used for chat. The per-model `decides: true` flag is what makes a model a hidden classifier; `vllm-sr/auto` (System Two, real chat) omits it and stays visible.
-- System One models get a one-token output budget; `vllm-sr/auto` gets a real one and `tool_call: true`.
+- The provider keeps `decide: true` — magpie's docs: without it, `decides` has no effect and **every** model is used for chat. The per-model `decides: true` flag is what makes a model a hidden classifier; the System Two chat models (`vllm-sr/auto` and `vllm-sr/norn-1`, one pool under two names) omit it and stay visible.
+- System One models get a one-token output budget; the System Two models get a real one and `tool_call: true`, and their context window is 1,048,576 tokens (the 131072 cap is System One's per-request input limit, not System Two's).
 - `npm: "@ai-sdk/openai-compatible"` serves both: the upstream speaks OpenAI Chat Completions on `/v1/chat/completions` (System Two) and magpie posts decisions to `{baseURL}/systemone` (System One).
 
 ## Model ids: map keys are the upstream ids, prefix included
@@ -38,6 +38,12 @@ Key creation is rate-limited per network address (429 `key_creation_limited`, `R
    ```
    After edits, refresh the copy (`cp … && magpie plugin rm … && magpie plugin add …`) or just re-add: the CLI loads the folder contents on every command. If a magpie command hangs with no output, a stale plugin-host from a killed run is the usual cause: `pkill -f magpie-bu[n]` and retry.
 3. Exercise the flows (`magpie plugin login vllm-sr …`, `magpie quota`, `magpie plugin --json`), then kill the mock. Leaving the sandbox in place is fine — it is gitignored territory under /tmp and makes the next run instant.
+
+Operational traps learned the hard way:
+
+- **Always wrap magpie commands in `timeout`** (say `timeout 60`). Commands that wait for interactive input (`magpie plugin login`, `magpie models`) sit forever with stdin redirected, and a bun download that cannot reach GitHub does the same — an exit code of 0 with no output means the command never really ran.
+- **If the sandbox lost its bun cache** (magpie wants to re-download bun and hangs on GitHub), copy it back from the real HOME instead: `mkdir -p $XDG_CACHE_HOME/magpie/bun/1.4.2 && cp ~/.cache/magpie/bun/1.4.2/magpie-bun $XDG_CACHE_HOME/magpie/bun/1.4.2/` (plus `~/.cache/magpie/bun/install-cache` if present).
+- `pkill -f 'test/mock.mjs'` kills the calling shell too (the pattern matches the shell's own command line) — use `pkill -f 'mock[.]mjs'`.
 
 The mock validates the proof of work the same way the real API does (leading zero bits of SHA-256 ≥ difficulty), so a passing run means the logic is right, not just that a call happened. Its usage endpoints return deliberately lopsided numbers (requests nearly spent, tokens barely touched) so a `used` bug shows in `magpie quota` at once, and its `/v1/chat/completions` and `/v1/systemone` echo the received model id — `magpie provider test vllm-sr` after any model-map change proves the wire format. Real-API calls are only for one-shot verifications the user asks for.
 

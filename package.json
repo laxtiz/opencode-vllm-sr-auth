@@ -1,6 +1,6 @@
 {
   "name": "opencode-vllm-sr-auth",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "vLLM-SR System Duo — System One decision models (choice/noul/score/box/span) plus the System Two chat router, for OpenCode and magpie",
   "type": "module",
   "main": "./index.mjs",

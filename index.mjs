@@ -7,9 +7,10 @@ import { createHash } from "node:crypto"
 //   calibrated probabilities and generate no text, so they are marked
 //   `decides: true` — magpie offers them as routing-group classifiers and
 //   hides them from agents' model lists.
-// - System Two, vllm-sr/auto: an OpenAI Chat Completions endpoint whose
-//   router (vLLM Semantic Router) picks a model from its pool per request.
-//   A plain chat model: no decides flag, visible to agents.
+// - System Two, vllm-sr/auto (and vllm-sr/norn-1, the release it serves
+//   now): OpenAI Chat Completions endpoints whose router (vLLM Semantic
+//   Router) picks a model from its pool per request. Plain chat models: no
+//   decides flag, visible to agents.
 //
 // The provider keeps `decide: true` — magpie's docs: without it, `decides`
 // has no effect and every model is used for chat. The per-model `decides`
@@ -17,7 +18,7 @@ import { createHash } from "node:crypto"
 
 const PROVIDER = "vllm-sr"
 const BASE = "https://app.vllm-sr.ai"
-const VERSION = "0.5.0"
+const VERSION = "0.5.2"
 
 // Key auto-registration, per https://app.vllm-sr.ai/docs#authentication
 // ("Create a key from a terminal"): solve the proof-of-work challenge
@@ -77,11 +78,14 @@ const s1Model = {
   decides: true,
 }
 
-// System Two: the router model. Input and output share the service's
-// 131072-token request cap; the pool (today GLM-5.3-Flash and Qwen3.8) does
+// System Two: the router model, published under two names — vllm-sr/auto
+// ("newest generation") and vllm-sr/norn-1 (the release it serves now), one
+// pool behind both. The docs put its context window at 1,048,576 tokens;
+// the 131072 cap is System One's per-request input limit, not this one's.
+// The pool (today DeepSeek-V4.1-Flash, GLM-5.3-Flash and Qwen3.8-27B) does
 // function calling.
 const autoModel = {
-  limit: { context: 131072, output: 16384 },
+  limit: { context: 1048576, output: 16384 },
   tool_call: true,
   free: true,
 }
@@ -89,6 +93,7 @@ const autoModel = {
 const DEFAULT_MODELS = {
   ...Object.fromEntries(Object.entries(S1_MODELS).map(([id, m]) => [id, { ...s1Model, ...m }])),
   "vllm-sr/auto": { ...autoModel, name: "vLLM-SR auto" },
+  "vllm-sr/norn-1": { ...autoModel, name: "vLLM-SR norn-1" },
 }
 
 export const VllmSrAuthPlugin = async ({ client }) => ({
